@@ -20,30 +20,42 @@ exports.getConversations = async (req, res) => {
     }
 };
 
+// only programming v1
 exports.sendMessage = async (req, res) => {
     const { message, client_id } = req.body;
 
     if (!message) return res.status(400).json({ error: 'Message is required' });
 
     try {
+        // Get last 10 messages for context
         const history = await Conversation.findAll({
             where: { client_id },
             order: [['createdAt', 'ASC']],
             limit: 10,
         });
 
-        const promptHistory = history
-            .map((m) => `${m.sender}: ${m.message}`)
-            .join('\n');
+        const formattedHistory = history.map((m) => ({
+            role: m.sender === 'client' ? 'user' : 'assistant',
+            content: m.message,
+        }));
 
         const chatMessages = [
-            { role: 'system', content: 'You are a helpful AI support agent.' },
-            { role: 'user', content: `${promptHistory}\nclient: ${message}` },
+            {
+                role: 'system',
+                content: `You are an AI support agent that ONLY answers questions about programming languages.
+If the user asks about anything else (health, politics, movies, etc.), you must reply strictly with:
+"Sorry, I’m not trained to answer that."
+
+Never provide unrelated answers.`,
+            },
+            ...formattedHistory,
+            { role: 'user', content: message },
         ];
 
         const completion = await openai.chat.completions.create({
             model: 'openai/gpt-3.5-turbo',
             messages: chatMessages,
+            temperature: 0,
         });
 
         const reply = completion.choices[0].message.content;
@@ -55,10 +67,10 @@ exports.sendMessage = async (req, res) => {
             message,
         });
 
-        // Save agent reply with agent_id
+        // Save agent reply
         await Conversation.create({
             client_id,
-            agent_id: 'A001', // Set this dynamically if you have multiple agents
+            agent_id: 'A001',
             sender: 'agent',
             message: reply,
         });
@@ -69,3 +81,53 @@ exports.sendMessage = async (req, res) => {
         res.status(500).json({ error: 'AI API error' });
     }
 };
+
+// exports.sendMessage = async (req, res) => {
+//     const { message, client_id } = req.body;
+
+//     if (!message) return res.status(400).json({ error: 'Message is required' });
+
+//     try {
+//         const history = await Conversation.findAll({
+//             where: { client_id },
+//             order: [['createdAt', 'ASC']],
+//             limit: 10,
+//         });
+
+//         const promptHistory = history
+//             .map((m) => `${m.sender}: ${m.message}`)
+//             .join('\n');
+
+//         const chatMessages = [
+//             { role: 'system', content: 'You are a helpful AI support agent.' },
+//             { role: 'user', content: `${promptHistory}\nclient: ${message}` },
+//         ];
+
+//         const completion = await openai.chat.completions.create({
+//             model: 'openai/gpt-3.5-turbo',
+//             messages: chatMessages,
+//         });
+
+//         const reply = completion.choices[0].message.content;
+
+//         // Save client message
+//         await Conversation.create({
+//             client_id,
+//             sender: 'client',
+//             message,
+//         });
+
+//         // Save agent reply with agent_id
+//         await Conversation.create({
+//             client_id,
+//             agent_id: 'A001', // Set this dynamically if you have multiple agents
+//             sender: 'agent',
+//             message: reply,
+//         });
+
+//         res.json({ reply });
+//     } catch (err) {
+//         console.error('AI API Error:', err);
+//         res.status(500).json({ error: 'AI API error' });
+//     }
+// };
